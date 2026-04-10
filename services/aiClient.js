@@ -3,6 +3,13 @@ const axios = require("axios");
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
+function createProviderError(message, statusCode, code) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  err.code = code;
+  return err;
+}
+
 function sanitizeMessagesForProvider(messages) {
   const safeMessages = [];
   let pendingToolCallIds = new Set();
@@ -58,7 +65,11 @@ async function createChatCompletion({ messages, tools, toolChoice = "auto", mode
   const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is missing in environment variables.");
+    throw createProviderError(
+      "OPENROUTER_API_KEY is missing in environment variables.",
+      500,
+      "OPENROUTER_CONFIG_MISSING"
+    );
   }
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -107,10 +118,26 @@ async function createChatCompletion({ messages, tools, toolChoice = "auto", mode
       console.error("  - OpenRouter account deleted or suspended");
       console.error("  - Account has no active billing");
       console.error("[AI Client] API Key configured (first 20 chars):", apiKey?.substring(0, 20) + "...");
-      throw new Error(`OpenRouter authentication failed (401): ${errorMessage}`);
+      throw createProviderError(
+        `OpenRouter authentication failed: ${errorMessage}`,
+        502,
+        "OPENROUTER_AUTH_FAILED"
+      );
     }
-    
-    throw new Error("Failed to get response from OpenRouter API.");
+
+    if (error?.code === "ECONNABORTED") {
+      throw createProviderError(
+        "OpenRouter request timed out.",
+        504,
+        "OPENROUTER_TIMEOUT"
+      );
+    }
+
+    throw createProviderError(
+      `Failed to get response from OpenRouter API${status ? ` (status ${status})` : ""}.`,
+      502,
+      "OPENROUTER_REQUEST_FAILED"
+    );
   }
 }
 

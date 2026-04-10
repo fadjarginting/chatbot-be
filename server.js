@@ -16,7 +16,16 @@ app.use("/chat", chatRoute);
 
 app.use((err, req, res, next) => {
   console.error("[Server] Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
+  const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+  const exposeMessage =
+    (statusCode >= 400 && statusCode < 500) ||
+    String(err?.code || "").startsWith("OPENROUTER_");
+
+  res.status(statusCode).json({
+    error: exposeMessage ? err.message : "Internal server error",
+    code: err?.code || "UNHANDLED_ERROR",
+    ...(process.env.NODE_ENV !== "production" ? { details: err?.message } : {}),
+  });
 });
 
 app.listen(PORT, () => {
